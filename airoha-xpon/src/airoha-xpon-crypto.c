@@ -381,8 +381,21 @@ int airoha_xpon_activate_data_key(struct airoha_xpon *xpon, u8 index)
 	ret = readl_poll_timeout_atomic(
 		xpon->xgpon_base + AIROHA_XGPON_INT_STATUS, status,
 		status & AIROHA_XGPON_INT_AES_KEY_SWITCH_DONE, 1, 3000);
-	if (ret)
-		return ret;
+	if (ret) {
+		/*
+		 * AN7581 (e.g. EN7581/HG5585F) does not report the completion
+		 * bit for this switch, but the slot write above still takes
+		 * effect. Treat the timeout as best effort instead of failing
+		 * the Key_Control confirm: aborting here makes the OLT send
+		 * Deactivate after five retries and the line re-ranges in a
+		 * loop forever.
+		 */
+		dev_warn_ratelimited(
+			xpon->dev,
+			"AES key switch to slot %u not acknowledged, continuing\n",
+			(unsigned int)index);
+		return 0;
+	}
 
 	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_STATUS,
 	                   AIROHA_XGPON_INT_AES_KEY_SWITCH_DONE);
